@@ -59,11 +59,13 @@ struct apr_thread_t {
     void *data;
     apr_thread_start_t func;
     apr_status_t exitval;
+	int priority;
 };
 
 struct apr_threadattr_t {
     apr_pool_t *pool;
     pthread_attr_t attr;
+	int priority;
 };
 
 struct apr_threadkey_t {

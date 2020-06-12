@@ -369,6 +369,14 @@ apr_status_t apr_socket_opt_get(apr_socket_t *sock,
     return APR_SUCCESS;
 }
 
+int apr_socket_fd_get(apr_socket_t *sock)
+{
+	if (sock) {
+		return sock->socketdes;
+	} else {
+		return 0;
+	}
+}
 
 apr_status_t apr_socket_atmark(apr_socket_t *sock, int *atmark)
 {

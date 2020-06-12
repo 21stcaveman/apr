@@ -60,12 +60,14 @@ struct apr_thread_t {
     apr_thread_start_t func;
     apr_status_t exitval;
     int detached;
+    int priority;
 };
 
 struct apr_threadattr_t {
     apr_pool_t *pool;
     pthread_attr_t attr;
     apr_size_t max_free;
+    int priority;
 };
 
 struct apr_threadkey_t {

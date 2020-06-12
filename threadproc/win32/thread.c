@@ -148,10 +148,23 @@ APR_DECLARE(apr_status_t) apr_thread_create(apr_thread_t **new,
     apr_status_t stat;
     unsigned temp;
     HANDLE handle;
+	int priority = THREAD_PRIORITY_NORMAL;
 
     stat = alloc_thread(new, attr, func, data, pool);
     if (stat != APR_SUCCESS) {
         return stat;
+    }
+
+	if (attr && attr->priority && attr->priority > 0) {
+        if (attr->priority >= 99) {
+            priority = THREAD_PRIORITY_TIME_CRITICAL;
+        } else if (attr->priority >= 50) {
+            priority = THREAD_PRIORITY_ABOVE_NORMAL;
+        } else if (attr->priority >= 10) {
+            priority = THREAD_PRIORITY_NORMAL;
+        } else if (attr->priority >= 1) {
+            priority = THREAD_PRIORITY_LOWEST;
+        }
     }
 
     /* Use 0 for default Thread Stack Size, because that will
@@ -166,7 +179,20 @@ APR_DECLARE(apr_status_t) apr_thread_create(apr_thread_t **new,
         return stat;
     }
 
-    if (attr && attr->detach) {
+    if ((handle = (HANDLE)_beginthreadex(NULL,
+                        (DWORD) (attr ? attr->stacksize : 0),
+                        dummy_worker,
+                        (*new), CREATE_SUSPENDED, &temp)) == 0) {
+        stat = APR_FROM_OS_ERROR(_doserrno);
+        apr_pool_destroy((*new)->pool);
+        return stat;
+    }
+
+    if (priority) {
+		SetThreadPriority(handle, priority);
+	}
+
+	if (attr && attr->detach) {
         ResumeThread(handle);
         CloseHandle(handle);
     }

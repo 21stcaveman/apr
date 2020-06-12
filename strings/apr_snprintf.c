@@ -828,6 +828,11 @@ APR_DECLARE(int) apr_vformatter(int (*flush_func)(apr_vformatter_buff_t *),
                 /* Need to account for trailing 'd' and null in sizeof() */
                 var_type = IS_QUAD;
                 fmt += (sizeof(APR_OFF_T_FMT) - 2);
+				/* HACK BY FREESWITCH TEAM TO FIX COMPATIBILITY 2010-09-27 */
+				if (*fmt == 'l' && *(fmt + 1) == 'l') {
+					var_type = IS_QUAD;
+					fmt += 2;
+				}
             }
             else if ((sizeof(APR_INT64_T_FMT) == 4 &&
                  fmt[0] == APR_INT64_T_FMT[0] &&
@@ -848,6 +853,11 @@ APR_DECLARE(int) apr_vformatter(int (*flush_func)(apr_vformatter_buff_t *),
             else if (*fmt == 'l') {
                 var_type = IS_LONG;
                 fmt++;
+				/* HACK BY FREESWITCH TEAM TO FIX COMPATIBILITY 2010-09-27 */
+				if (*fmt == 'l') {
+					var_type = IS_QUAD;
+					fmt++;
+				}
             }
             else if (*fmt == 'h') {
                 var_type = IS_SHORT;

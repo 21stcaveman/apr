@@ -39,6 +39,7 @@ struct apr_threadattr_t {
     apr_int32_t detach;
     apr_size_t stacksize;
     apr_size_t max_free;
+	int priority;
 };
 
 struct apr_threadkey_t {

@@ -103,6 +103,14 @@ APR_DECLARE(apr_status_t) apr_socket_timeout_get(apr_socket_t *sock,
     return APR_SUCCESS;
 }
 
+APR_DECLARE(int) apr_socket_fd_get(apr_socket_t *sock)
+{
+	if (sock) {
+		return sock->socketdes;
+	} else {
+		return 0;
+	}
+}
 
 APR_DECLARE(apr_status_t) apr_socket_opt_get(apr_socket_t *sock, 
                                              apr_int32_t opt, apr_int32_t *on)

@@ -536,6 +536,14 @@ APR_DECLARE(int) apr_pool_is_ancestor(apr_pool_t *a, apr_pool_t *b);
 APR_DECLARE(void) apr_pool_tag(apr_pool_t *pool, const char *tag)
                   __attribute__((nonnull(1)));
 
+/**
+ * Retrieve the tag name.
+ * @param pool The pool
+ * @return Tag name, or NULL if no name is set.
+ */
+APR_DECLARE(const char *) apr_pool_get_tag(apr_pool_t *pool)
+                  __attribute__((nonnull(1)));
+
 #if APR_HAS_THREADS
 /**
  * Add a mutex to a pool to make it suitable to use from multiple threads.

@@ -1103,8 +1103,17 @@ APR_DECLARE(apr_status_t) apr_pool_create_ex(apr_pool_t **newpool,
      * pool is created, in which case allocator is guaranteed to be
      * non-NULL. */
 
-    if (!abort_fn && parent)
-        abort_fn = parent->abort_fn;
+    if (!abort_fn && parent) {
+        if (!parent) {
+            /* There is no way to continue without an allocator when no parent */
+            if (abort_fn)
+                abort_fn(APR_EINVAL);
+
+            return APR_EINVAL;
+        }
+
+        allocator = parent->allocator;
+    }
 
     if (allocator == NULL)
         allocator = parent->allocator;
@@ -1562,6 +1571,22 @@ static int apr_pool_walk_tree(apr_pool_t *pool,
 #endif /* APR_HAS_THREADS */
 
     return rv;
+}
+
+APR_DECLARE(int) apr_pool_walk_tree_debug(apr_pool_t *pool,
+	int(*fn)(apr_pool_t *pool, void *data),
+	void *data)
+{
+	return apr_pool_walk_tree(pool, fn, data);
+}
+
+APR_DECLARE(void) apr_pool_get_stats(apr_pool_t *pool, unsigned int *alloc, unsigned int *total_alloc, unsigned int *clear)
+{
+	if (pool) {
+		*alloc = pool->stat_alloc;
+		*total_alloc = pool->stat_total_alloc;
+		*clear = pool->stat_clear;
+	}
 }
 
 #if (APR_POOL_DEBUG & APR_POOL_DEBUG_VERBOSE_ALL)

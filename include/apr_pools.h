@@ -551,6 +551,7 @@ APR_DECLARE(const char *) apr_pool_get_tag(apr_pool_t *pool)
                   __attribute__((nonnull(1)));
 
 #if APR_HAS_THREADS
+#include "apr_thread_mutex.h"
 /**
  * Add a mutex to a pool to make it suitable to use from multiple threads.
  * @param pool The pool to add the mutex to

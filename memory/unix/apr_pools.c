@@ -571,6 +571,9 @@ struct apr_pool_t {
     apr_abortfunc_t       abort_fn;
     apr_hash_t           *user_data;
     const char           *tag;
+#if APR_HAS_THREADS
+    apr_thread_mutex_t   *user_mutex;
+#endif
 
 #if !APR_POOL_DEBUG
     apr_memnode_t        *active;
@@ -810,8 +813,12 @@ static APR_INLINE void pool_concurrency_set_destroyed(apr_pool_t *pool) { }
 APR_DECLARE(void *) apr_palloc(apr_pool_t *pool, apr_size_t in_size)
 {
     apr_memnode_t *active, *node;
-    void *mem;
+    void *mem = NULL;
     apr_size_t size, free_index;
+
+#if APR_HAS_THREADS
+    if (pool->user_mutex) apr_thread_mutex_lock(pool->user_mutex);
+#endif
 
     pool_concurrency_set_used(pool);
     size = APR_ALIGN_DEFAULT(in_size);
@@ -824,7 +831,7 @@ APR_DECLARE(void *) apr_palloc(apr_pool_t *pool, apr_size_t in_size)
         if (pool->abort_fn)
             pool->abort_fn(APR_ENOMEM);
 
-        return NULL;
+        goto have_mem;
     }
     active = pool->active;
 
@@ -845,7 +852,8 @@ APR_DECLARE(void *) apr_palloc(apr_pool_t *pool, apr_size_t in_size)
             if (pool->abort_fn)
                 pool->abort_fn(APR_ENOMEM);
 
-            return NULL;
+            mem = NULL;
+            goto have_mem;
         }
     }
 
@@ -875,6 +883,9 @@ APR_DECLARE(void *) apr_palloc(apr_pool_t *pool, apr_size_t in_size)
     list_insert(active, node);
 
 have_mem:
+#if APR_HAS_THREADS
+    if (pool->user_mutex) apr_thread_mutex_unlock(pool->user_mutex);
+#endif
 #if HAVE_VALGRIND
     if (!apr_running_on_valgrind) {
         pool_concurrency_set_idle(pool);
@@ -920,6 +931,9 @@ APR_DECLARE(void *) apr_pcalloc(apr_pool_t *pool, apr_size_t size)
 APR_DECLARE(void) apr_pool_clear(apr_pool_t *pool)
 {
     apr_memnode_t *active;
+#if APR_HAS_THREADS
+    if (pool->user_mutex) apr_thread_mutex_lock(pool->user_mutex);
+#endif
 
     /* Run pre destroy cleanups */
     run_cleanups(&pool->pre_cleanups);
@@ -958,7 +972,7 @@ APR_DECLARE(void) apr_pool_clear(apr_pool_t *pool)
 
     if (active->next == active) {
         pool_concurrency_set_idle(pool);
-        return;
+        goto end;
     }
 
     *active->ref = NULL;
@@ -967,7 +981,19 @@ APR_DECLARE(void) apr_pool_clear(apr_pool_t *pool)
     active->ref = &active->next;
 
     pool_concurrency_set_idle(pool);
+
+end:
+#if APR_HAS_THREADS
+    if (pool->user_mutex) apr_thread_mutex_unlock(pool->user_mutex);
+#endif
 }
+
+#if APR_HAS_THREADS
+APR_DECLARE(void) apr_pool_mutex_set(apr_pool_t *pool, apr_thread_mutex_t *mutex)
+{
+    pool->user_mutex = mutex;
+}
+#endif
 
 APR_DECLARE(void) apr_pool_destroy(apr_pool_t *pool)
 {
@@ -1098,7 +1124,9 @@ APR_DECLARE(apr_status_t) apr_pool_create_ex(apr_pool_t **newpool,
     pool->subprocesses = NULL;
     pool->user_data = NULL;
     pool->tag = NULL;
-
+#if APR_HAS_THREADS
+    pool->user_mutex = NULL;
+#endif
 #ifdef NETWARE
     pool->owner_proc = (apr_os_proc_t)getnlmhandle();
 #endif /* defined(NETWARE) */
@@ -1184,6 +1212,9 @@ APR_DECLARE(apr_status_t) apr_pool_create_unmanaged_ex(apr_pool_t **newpool,
     pool->parent = NULL;
     pool->sibling = NULL;
     pool->ref = NULL;
+#if APR_HAS_THREADS
+    pool->user_mutex = NULL;
+#endif
 
 #ifdef NETWARE
     pool->owner_proc = (apr_os_proc_t)getnlmhandle();
@@ -1337,6 +1368,10 @@ APR_DECLARE(char *) apr_pvsprintf(apr_pool_t *pool, const char *fmt, va_list ap)
     apr_memnode_t *active, *node;
     apr_size_t free_index;
 
+#if APR_HAS_THREADS
+    if (pool->user_mutex) apr_thread_mutex_lock(pool->user_mutex);
+#endif
+
     pool_concurrency_set_used(pool);
     ps.node = pool->active;
     ps.pool = pool;
@@ -1402,7 +1437,7 @@ APR_DECLARE(char *) apr_pvsprintf(apr_pool_t *pool, const char *fmt, va_list ap)
      */
     if (!ps.got_a_new_node) {
         pool_concurrency_set_idle(pool);
-        return strp;
+        goto end;
     }
 
     active = pool->active;
@@ -1422,7 +1457,7 @@ APR_DECLARE(char *) apr_pvsprintf(apr_pool_t *pool, const char *fmt, va_list ap)
 
     if (free_index >= node->free_index) {
         pool_concurrency_set_idle(pool);
-        return strp;
+        goto end;
     }
 
     do {
@@ -1432,6 +1467,11 @@ APR_DECLARE(char *) apr_pvsprintf(apr_pool_t *pool, const char *fmt, va_list ap)
 
     list_remove(active);
     list_insert(active, node);
+
+end:
+#if APR_HAS_THREADS
+    if (pool->user_mutex) apr_thread_mutex_unlock(pool->user_mutex);
+#endif
 
     pool_concurrency_set_idle(pool);
     return strp;
@@ -2435,7 +2475,6 @@ APR_DECLARE(void) apr_pool_tag(apr_pool_t *pool, const char *tag)
     pool->tag = tag;
 }
 
-
 /*
  * User data management
  */
@@ -2520,6 +2559,10 @@ APR_DECLARE(void) apr_pool_cleanup_register(apr_pool_t *p, const void *data,
 {
     cleanup_t *c = NULL;
 
+#if APR_HAS_THREADS
+    if (p->user_mutex) apr_thread_mutex_lock(p->user_mutex);
+#endif
+
 #if APR_POOL_DEBUG
     apr_pool_check_integrity(p);
 #endif /* APR_POOL_DEBUG */
@@ -2551,6 +2594,10 @@ APR_DECLARE(void) apr_pool_pre_cleanup_register(apr_pool_t *p, const void *data,
 {
     cleanup_t *c = NULL;
 
+#if APR_HAS_THREADS
+    if (p->user_mutex) apr_thread_mutex_lock(p->user_mutex);
+#endif
+
 #if APR_POOL_DEBUG
     apr_pool_check_integrity(p);
 #endif /* APR_POOL_DEBUG */
@@ -2581,12 +2628,15 @@ APR_DECLARE(void) apr_pool_cleanup_kill(apr_pool_t *p, const void *data,
 {
     cleanup_t *c, **lastp;
 
+#if APR_HAS_THREADS
+    if (p->user_mutex) apr_thread_mutex_lock(p->user_mutex);
+#endif
 #if APR_POOL_DEBUG
     apr_pool_check_integrity(p);
 #endif /* APR_POOL_DEBUG */
 
     if (p == NULL)
-        return;
+        goto end;
 
     c = p->cleanups;
     lastp = &p->cleanups;
@@ -2609,7 +2659,11 @@ APR_DECLARE(void) apr_pool_cleanup_kill(apr_pool_t *p, const void *data,
         }
 
         lastp = &c->next;
-        c = c->next;
+		if (c == c->next) {
+			c = NULL;
+		} else {
+			c = c->next;
+		}
     }
 
     /* Remove any pre-cleanup as well */
@@ -2634,9 +2688,17 @@ APR_DECLARE(void) apr_pool_cleanup_kill(apr_pool_t *p, const void *data,
         }
 
         lastp = &c->next;
-        c = c->next;
+		if (c == c->next) {
+			c = NULL;
+		} else {
+			c = c->next;
+		}
     }
 
+end:
+#if APR_HAS_THREADS
+    if (p->user_mutex) apr_thread_mutex_unlock(p->user_mutex);
+#endif
 }
 
 APR_DECLARE(void) apr_pool_child_cleanup_set(apr_pool_t *p, const void *data,
@@ -2645,12 +2707,15 @@ APR_DECLARE(void) apr_pool_child_cleanup_set(apr_pool_t *p, const void *data,
 {
     cleanup_t *c;
 
+#if APR_HAS_THREADS
+    if (p->user_mutex) apr_thread_mutex_lock(p->user_mutex);
+#endif
 #if APR_POOL_DEBUG
     apr_pool_check_integrity(p);
 #endif /* APR_POOL_DEBUG */
 
     if (p == NULL)
-        return;
+        goto end;
 
     c = p->cleanups;
     while (c) {
@@ -2661,6 +2726,10 @@ APR_DECLARE(void) apr_pool_child_cleanup_set(apr_pool_t *p, const void *data,
 
         c = c->next;
     }
+end:
+#if APR_HAS_THREADS
+    if (p->user_mutex) apr_thread_mutex_unlock(p->user_mutex);
+#endif
 }
 
 APR_DECLARE(apr_status_t) apr_pool_cleanup_run(apr_pool_t *p, void *data,
